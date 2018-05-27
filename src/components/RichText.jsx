@@ -1,12 +1,22 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
+import { convertToHTML } from 'draft-convert';
 import {
+    SelectionState,
+    ContentState,
+    getDefaultKeyBinding,
     Editor,
     EditorState,
     RichUtils,
     Modifier,
-    CompositeDecorator
+    CompositeDecorator,
+    KeyBindingUtil,
+    convertFromHTML,
+    DefaultDraftBlockRenderMap,
+    BlockMap,
+    AtomicBlockUtils
 } from 'draft-js';
+import Immutable from 'immutable';
 import './RichText.css';
 
 function wrapButton(template) {
@@ -27,6 +37,7 @@ function wrapButton(template) {
 const BtnLink = wrapButton(<span>link</span>);
 const BtnUndo = wrapButton(<span>undo</span>);
 const BtnBold = wrapButton(<span>bold</span>);
+const BtnToHtml = wrapButton(<span>to html</span>);
 
 const Link = props => {
     const { url } = props.contentState.getEntity(props.entityKey).getData();
@@ -38,6 +49,25 @@ function findLinkEntities(contentBlock, callback, contentState) {
         return (
             entityKey !== null &&
             contentState.getEntity(entityKey).getType() === 'LINK'
+        );
+    }, callback);
+}
+
+const Img = props => {
+    const { src } = props.contentState.getEntity(props.entityKey).getData();
+    return (
+        <div>
+            <img src={src} />
+        </div>
+    );
+};
+
+function findImgEntities(contentBlock, callback, contentState) {
+    contentBlock.findEntityRanges(character => {
+        const entityKey = character.getEntity();
+        return (
+            entityKey != null &&
+            contentState.getEntity(entityKey).getType() === 'IMAGE'
         );
     }, callback);
 }
@@ -55,13 +85,66 @@ function findHashTagEntities(contentBlock, callback, contentState) {
     }
 }
 
-const Img = props => {
-    const { src } = props.contentState.getEntity(props.entityKey).getData();
-    return <img src={src} />;
-};
+/**
+ * 自定义快捷键
+ * @param {KeyboardEvent} e
+ * @return {String}
+ */
+function myKeyBindFn(e) {
+    if (e.keyCode === 83 && KeyBindingUtil.hasCommandModifier(e)) {
+        return 'myeditor-save';
+    }
+    return getDefaultKeyBinding(e);
+}
 
-function findImgEntities(contentBlock, callback) {
-    callback();
+/**
+ * 自定义块级元素样式（为块级元素添加 class)
+ * @param {Object} contentBlock
+ * @returns {String}
+ */
+function myBlockStyleFn(contentBlock) {
+    let type = contentBlock.getType();
+    console.log(type);
+    if (type == '  ') {
+        return 'my-div';
+    }
+}
+
+const myBlockRenderMap = DefaultDraftBlockRenderMap.merge(
+    Immutable.Map({
+        unstyled: {
+            element: 'div',
+            aliasedElements: ['p']
+        }
+    })
+);
+
+function myBlockRenderFn(contentBlock) {
+    const type = contentBlock.getType();
+    console.log(type);
+    if (type == 'atomic') {
+        return {
+            component: MediaComponent,
+            editable: false,
+            props: {
+                foo: 'bar'
+            }
+        };
+    }
+}
+
+class MediaComponent extends React.Component {
+    render() {
+        const { block, contentState } = this.props;
+        const { foo } = this.props.blockProps;
+        const data = contentState.getEntity(block.getEntityAt(0)).getData();
+        // Return a <figure> or some other content using this data.
+        return (
+            <figure>
+                <img src={data.src} />
+            </figure>
+        );
+    }
 }
 
 class RichText extends Component {
@@ -82,17 +165,60 @@ class RichText extends Component {
             }
         ]);
 
+        const initHtml = `
+        <p>
+        <a href="www.google.com">to google</a>
+        </p>
+        <p>
+        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTWWHJDLH243o52BuTgX32Bs_CNfIRo3zHYxCVKCqdP1gexItuYnQ"/>
+        </p>
+        <p>ddd</p>`;
+
+        let { contentBlocks, entityMap } = convertFromHTML(initHtml);
         this.state = {
-            editorState: EditorState.createEmpty(decorator)
+            // editorState: EditorState.createEmpty(decorator)
+            editorState: EditorState.createWithContent(
+                ContentState.createFromBlockArray(contentBlocks, entityMap),
+                decorator
+            )
         };
         this.refEditor = React.createRef();
         this.onChange = this.onChange.bind(this);
         this.handleKeyCommand = this.handleKeyCommand.bind(this);
+
+        this.onBtnBoldClick = this.onBtnBoldClick.bind(this);
+        this.onBtnLinkClick = this.onBtnLinkClick.bind(this);
+        this.onBtnUndoClick = this.onBtnUndoClick.bind(this);
+        this.onBtnTohtmlClick = this.onBtnTohtmlClick.bind(this);
     }
     onChange(editorState) {
         this.setState({
             editorState
         });
+    }
+    onBtnTohtmlClick() {
+        let html = convertToHTML({
+            styleToHTML: style => {
+                if (style === 'BOLD') {
+                    return <span style={{ color: 'blue' }} />;
+                }
+            },
+            blockToHTML: block => {
+                if (block.type === 'PARAGRAPH') {
+                    return <p />;
+                }
+            },
+
+            entityToHTML: (entity, originalText) => {
+                if (entity.type === 'LINK') {
+                    return <a href={entity.data.url}>{originalText}</a>;
+                } else if (entity.type == 'IMAGE') {
+                    return <img src={entity.data.src} />;
+                }
+                return originalText;
+            }
+        })(this.state.editorState.getCurrentContent());
+        console.log(html);
     }
     onBtnLinkClick() {
         let { editorState } = this.state;
@@ -126,7 +252,9 @@ class RichText extends Component {
             // this.onChange(RichUtils.toggleLink(newState, selection, entityKey));
         }
     }
-    onBtnUndoClick() {}
+    onBtnUndoClick() {
+        this.onChange(EditorState.undo(this.state.editorState));
+    }
     onBtnBoldClick() {
         this.onChange(
             RichUtils.toggleInlineStyle(this.state.editorState, 'BOLD')
@@ -145,9 +273,10 @@ class RichText extends Component {
         return (
             <div className="editor">
                 <div className="editor-bar">
-                    <BtnLink onClick={this.onBtnLinkClick.bind(this)} />
-                    <BtnUndo onClick={this.onBtnUndoClick.bind(this)} />
-                    <BtnBold onClick={this.onBtnBoldClick.bind(this)} />
+                    <BtnLink onClick={this.onBtnLinkClick} />
+                    <BtnUndo onClick={this.onBtnUndoClick} />
+                    <BtnBold onClick={this.onBtnBoldClick} />
+                    <BtnToHtml onClick={this.onBtnTohtmlClick} />
                 </div>
                 <div
                     className="editor-content"
@@ -159,6 +288,10 @@ class RichText extends Component {
                         ref={this.refEditor}
                         editorState={this.state.editorState}
                         handleKeyCommand={this.handleKeyCommand}
+                        keyBindingFn={myKeyBindFn}
+                        blockStyleFn={myBlockStyleFn}
+                        blockRenderMap={myBlockRenderMap}
+                        blockRendererFn={myBlockRenderFn}
                         onChange={this.onChange}
                     />
                 </div>
