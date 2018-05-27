@@ -5,6 +5,7 @@
   "dependencies": {
     "draft-convert": "^2.1.2",
     "draft-js": "^0.10.5",
+    "draft-js-export-html": "^1.2.0",
     "element-react": "^1.4.19",
     "immutable": "^3.8.2",
     "material-ui": "^0.20.1",

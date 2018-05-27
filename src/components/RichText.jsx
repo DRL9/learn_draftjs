@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import { convertToHTML } from 'draft-convert';
+import { stateToHTML } from 'draft-js-export-html';
+
 import {
     SelectionState,
     ContentState,
@@ -172,7 +173,7 @@ class RichText extends Component {
         <p>
         <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTWWHJDLH243o52BuTgX32Bs_CNfIRo3zHYxCVKCqdP1gexItuYnQ"/>
         </p>
-        <p>ddd</p>`;
+        <p>ddd</p><img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTWWHJDLH243o52BuTgX32Bs_CNfIRo3zHYxCVKCqdP1gexItuYnQ"/>`;
 
         let { contentBlocks, entityMap } = convertFromHTML(initHtml);
         this.state = {
@@ -197,28 +198,8 @@ class RichText extends Component {
         });
     }
     onBtnTohtmlClick() {
-        let html = convertToHTML({
-            styleToHTML: style => {
-                if (style === 'BOLD') {
-                    return <span style={{ color: 'blue' }} />;
-                }
-            },
-            blockToHTML: block => {
-                if (block.type === 'PARAGRAPH') {
-                    return <p />;
-                }
-            },
-
-            entityToHTML: (entity, originalText) => {
-                if (entity.type === 'LINK') {
-                    return <a href={entity.data.url}>{originalText}</a>;
-                } else if (entity.type == 'IMAGE') {
-                    return <img src={entity.data.src} />;
-                }
-                return originalText;
-            }
-        })(this.state.editorState.getCurrentContent());
-        console.log(html);
+        let html2 = stateToHTML(this.state.editorState.getCurrentContent());
+        console.log(html2);
     }
     onBtnLinkClick() {
         let { editorState } = this.state;
